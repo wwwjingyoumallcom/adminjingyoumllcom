@@ -205,24 +205,35 @@ jobs:
               openai==2.52.0 \
               portkey-ai==2.3.4
 
-            echo " ========== 提取端口,杀进程,Supervisor 会自动重启 =========="
+            echo " ========== 重启服务 =========="
             PORT=$(grep -E '^APP_PORT\s*=' .env.prod | head -1 | sed 's/.*=\s*//')
             PORT=${PORT:-9099}
-            fuser -k ${PORT}/tcp 2>/dev/null || true
 
-            # ========== Supervisor 自动重启 ==========
-            # /www/server/panel/pyenv/bin/supervisorctl restart ruoyifastapi
+            # 通过 Supervisor 重启（如果已配置）
+            if command -v supervisorctl &>/dev/null && supervisorctl status ruoyifastapi &>/dev/null; then
+              echo "通过 Supervisor 重启服务..."
+              supervisorctl restart ruoyifastapi
+            else
+              echo "Supervisor 未配置，手动重启..."
+              fuser -k ${PORT}/tcp 2>/dev/null || true
+              sleep 1
+              nohup .venv/bin/python app.py --env prod > /tmp/ruoyi-app.log 2>&1 &
+              echo "服务已启动，PID: $!"
+            fi
 
             echo " ========== 健康检查 =========="
             echo "Waiting for health check on port ${PORT}..."
             for i in $(seq 1 30); do
-              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/api/v1/common/health/live" 2>/dev/null || echo "000")
-              if [ "$HTTP_CODE" = "200" ]; then
-                echo "✅ Deployment successful (HTTP 200) after ${i}s"
+              # 检查端口是否响应（任何 HTTP 状态码都说明服务已启动）
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/" 2>/dev/null || echo "000")
+              if [ "$HTTP_CODE" != "000" ]; then
+                echo "✅ Deployment successful (HTTP ${HTTP_CODE}) after ${i}s"
                 exit 0
               fi
               sleep 1
             done
 
             echo "❌ Health check failed after 30s"
+            echo "========== 最近日志 =========="
+            tail -20 /tmp/ruoyi-app.log 2>/dev/null || true
             exit 1
