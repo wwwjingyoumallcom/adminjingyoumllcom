@@ -22,8 +22,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24.18.1'
-          cache: 'npm'
-          cache-dependency-path: ruoyi-fastapi-frontend/package-lock.json
 
       - name: Install frontend dependencies
         working-directory: ruoyi-fastapi-frontend
@@ -72,7 +70,7 @@ jobs:
 
       - name: Install app dependencies
         working-directory: ruoyi-fastapi-app
-        run: pnpm install --frozen-lockfile
+        run: pnpm install
 
       - name: Build app-h5
         working-directory: ruoyi-fastapi-app
