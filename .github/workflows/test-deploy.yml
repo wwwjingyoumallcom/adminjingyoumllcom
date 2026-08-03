@@ -176,7 +176,7 @@ jobs:
           script: |
             #!/bin/bash
             export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-            cd ${{ vars.TARGET }}/backend/ruoyi/
+            cd ${{ vars.TARGET }}/backend/fastapi/
 
             echo "========== 虚拟环境检查与修复 =========="
             if ! .venv/bin/python --version &>/dev/null; then
@@ -210,8 +210,8 @@ jobs:
             PORT=${PORT:-9099}
             fuser -k ${PORT}/tcp 2>/dev/null || true
 
-            # ========== 重启服务,可用提取端口,杀进程,Supervisor 自动重启替代 ==========
-            # /www/server/panel/pyenv/bin/supervisorctl restart fastapiadmin
+            # ========== Supervisor 自动重启 ==========
+            # /www/server/panel/pyenv/bin/supervisorctl restart ruoyifastapi
 
             echo " ========== 健康检查 =========="
             echo "Waiting for health check on port ${PORT}..."
