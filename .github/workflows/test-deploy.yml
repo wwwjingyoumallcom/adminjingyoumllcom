@@ -131,34 +131,34 @@ jobs:
       - name: List artifact structure
         run: find deploy -maxdepth 4 -type d | head -30
 
-      - name: Deploy frontend-web to test server
+      - name: Deploy web to ${{ vars.TARGET }}/frontend/web
         uses: easingthemes/ssh-deploy@main
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          ARGS: "-rlgoDzvc -i --delete"
+          ARGS: "-rlgoDzv --delete"
           REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
-          SOURCE: deploy/frontend_artifact
+          SOURCE: deploy/frontend_artifact/
           TARGET: ${{ vars.TARGET }}/frontend/web
 
-      - name: Deploy frontend-app to test server
+      - name: Deploy h5 to ${{ vars.TARGET }}/frontend/app
         uses: easingthemes/ssh-deploy@main
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          ARGS: "-rlgoDzvc -i --delete"
+          ARGS: "-rlgoDzv --delete"
           REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
-          SOURCE: deploy/h5_artifact
+          SOURCE: deploy/h5_artifact/
           TARGET: ${{ vars.TARGET }}/frontend/app
 
-      - name: Deploy backend to test server
+      - name: Deploy backend to ${{ vars.TARGET }}/backend/ruoyi
         uses: easingthemes/ssh-deploy@main
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          ARGS: "-rlgoDzvc -i --delete"
+          ARGS: "-rlgoDzv --delete"
           REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
-          SOURCE: deploy/backend_artifact
+          SOURCE: deploy/backend_artifact/
           TARGET: ${{ vars.TARGET }}/backend/ruoyi
 
       - name: Restart backend service
