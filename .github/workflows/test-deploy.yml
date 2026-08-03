@@ -124,15 +124,16 @@ jobs:
     environment: test
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@main
         with:
+          name: deploy-artifacts
           path: deploy
 
       - name: List artifact structure
         run: find deploy -maxdepth 4 -type d | head -30
 
       - name: Deploy frontend-web to test server
-        uses: easingthemes/ssh-deploy@v5
+        uses: easingthemes/ssh-deploy@main
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           ARGS: "-rlgoDzvc -i --delete"
@@ -142,7 +143,7 @@ jobs:
           TARGET: ${{ vars.TARGET }}/frontend/web
 
       - name: Deploy frontend-app to test server
-        uses: easingthemes/ssh-deploy@v5
+        uses: easingthemes/ssh-deploy@main
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           ARGS: "-rlgoDzvc -i --delete"
@@ -152,7 +153,7 @@ jobs:
           TARGET: ${{ vars.TARGET }}/frontend/app
 
       - name: Deploy backend to test server
-        uses: easingthemes/ssh-deploy@v5
+        uses: easingthemes/ssh-deploy@main
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           ARGS: "-rlgoDzvc -i --delete"
@@ -162,7 +163,7 @@ jobs:
           TARGET: ${{ vars.TARGET }}/backend/ruoyi
 
       - name: Restart backend service
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.REMOTE_HOST }}
           username: ${{ secrets.REMOTE_USER }}
