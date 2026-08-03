@@ -20,7 +20,7 @@ def build_async_sqlalchemy_database_url() -> str:
         )
     return (
         f'mysql+asyncmy://{DataBaseConfig.db_username}:{quote_plus(DataBaseConfig.db_password)}@'
-        f'{DataBaseConfig.db_host}:{DataBaseConfig.db_port}/{DataBaseConfig.db_database}'
+        f'{DataBaseConfig.db_host}:{DataBaseConfig.db_port}/{DataBaseConfig.db_database}?charset=utf8mb4'
     )
 
 
@@ -40,7 +40,7 @@ def build_sync_sqlalchemy_database_url() -> str:
         )
     return (
         f'mysql+pymysql://{DataBaseConfig.db_username}:{quote_plus(DataBaseConfig.db_password)}@'
-        f'{DataBaseConfig.db_host}:{DataBaseConfig.db_port}/{DataBaseConfig.db_database}'
+        f'{DataBaseConfig.db_host}:{DataBaseConfig.db_port}/{DataBaseConfig.db_database}?charset=utf8mb4'
     )
 
 

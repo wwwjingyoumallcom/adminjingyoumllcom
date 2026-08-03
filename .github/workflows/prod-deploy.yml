@@ -1,0 +1,114 @@
+name: Prod Environment CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  # 生产环境构建：前端打包 + 产物放入 backend/dist（由后端托管）
+  build:
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.1'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/web/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend (prod)
+        working-directory: frontend/web
+        run: pnpm build:prod
+        env:
+          NODE_OPTIONS: --max-old-space-size=8096
+
+      - name: Copy frontend dist to backend
+        run: |
+          rm -rf backend/dist
+          mkdir -p backend/dist
+          cp -r frontend/web/dist/* backend/dist/
+          echo "backend/dist/index.html exists: $([ -f backend/dist/index.html ] && echo yes || echo no)"
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-artifacts
+          path: backend
+          include-hidden-files: true
+
+  # 生产环境部署：rsync 同步代码 + SSH 重启后端
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Download deployment artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-artifacts
+          path: deploy
+
+      - name: Deploy to prod server
+        uses: easingthemes/ssh-deploy@main
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          # 只能覆盖源目录，不能删除源目录
+          ARGS: "-rlgoDzvc -i"
+          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          TARGET: ${{ vars.TARGET }}
+          SOURCE: deploy/
+
+      - name: Restart backend service
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          username: ${{ secrets.REMOTE_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+            cd ${{ vars.TARGET }}/backend
+            uv sync
+            mkdir -p logs
+
+            # 停止旧的后端进程（仅用 PID 文件，避免 pkill 误杀 SSH shell）
+            if [ -f backend.pid ]; then
+              OLD_PID=$(cat backend.pid)
+              kill "$OLD_PID" 2>/dev/null || true
+              sleep 2
+              kill -9 "$OLD_PID" 2>/dev/null || true
+              rm -f backend.pid
+            fi
+
+            # 启动新进程（生产模式，--env=prod 自动关闭 reload）
+            nohup uv run main.py run --env=prod > logs/backend.log 2>&1 < /dev/null &
+            echo $! > backend.pid
+            disown
+            sleep 3
+
+            # 验证进程存活
+            NEW_PID=$(cat backend.pid)
+            if kill -0 "$NEW_PID" 2>/dev/null; then
+              echo "✅ Backend started (PID: $NEW_PID)"
+            else
+              echo "❌ Backend failed to start, check logs/backend.log"
+              tail -50 logs/backend.log
+              exit 1
+            fi
+
+            echo "Deployment completed successfully"
