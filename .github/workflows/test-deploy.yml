@@ -25,7 +25,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ruoyi-fastapi-frontend
-        run: npm install --registry=https://registry.npmmirror.com --frozen-lockfile
+        run: npm install --registry=https://registry.npmmirror.com
 
       - name: Build frontend
         working-directory: ruoyi-fastapi-frontend
@@ -78,7 +78,7 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8096
 
-      - name: Upload app artifact
+      - name: Upload h5 artifact
         uses: actions/upload-artifact@v4
         with:
           name: h5_artifact
@@ -117,6 +117,7 @@ jobs:
         with:
           name: backend_artifact
           path: ruoyi-fastapi-backend
+          include-hidden-files: true
 
   deploy:
     needs: [frontend, app, backend]
@@ -124,15 +125,20 @@ jobs:
     environment: test
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@main
+        uses: actions/download-artifact@v4
         with:
           path: deploy
 
       - name: List artifact structure
-        run: find deploy -maxdepth 4 -type d | head -30
+        run: |
+          find deploy -maxdepth 4 -type d | head -30
+          echo "========== 检查 .env.prod =========="
+          ls -la deploy/backend_artifact/.env.prod 2>/dev/null || echo "❌ .env.prod 不存在!"
+          echo "========== 检查隐藏文件 =========="
+          ls -la deploy/backend_artifact/ | grep '^\.' || true
 
       - name: Deploy web to ${{ vars.TARGET }}/frontend/web
-        uses: easingthemes/ssh-deploy@main
+        uses: easingthemes/ssh-deploy@v5
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           ARGS: "-rlgoDzv --delete"
@@ -142,27 +148,27 @@ jobs:
           TARGET: ${{ vars.TARGET }}/frontend/web
 
       - name: Deploy h5 to ${{ vars.TARGET }}/frontend/app
-        uses: easingthemes/ssh-deploy@main
+        uses: easingthemes/ssh-deploy@v5
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           ARGS: "-rlgoDzv --delete"
           REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
           SOURCE: deploy/h5_artifact/
-          TARGET: ${{ vars.TARGET }}/frontend/app
+          TARGET: ${{ vars.TARGET }}/frontend/h5
 
-      - name: Deploy backend to ${{ vars.TARGET }}/backend/ruoyi
-        uses: easingthemes/ssh-deploy@main
+      - name: Deploy backend to ${{ vars.TARGET }}/backend/fastapi
+        uses: easingthemes/ssh-deploy@v5
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           ARGS: "-rlgoDzv --delete"
           REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
           SOURCE: deploy/backend_artifact/
-          TARGET: ${{ vars.TARGET }}/backend/ruoyi
+          TARGET: ${{ vars.TARGET }}/backend/fastapi
 
       - name: Restart backend service
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.REMOTE_HOST }}
           username: ${{ secrets.REMOTE_USER }}
@@ -199,7 +205,7 @@ jobs:
               openai==2.52.0 \
               portkey-ai==2.3.4
 
-            echo " ========== 提取端口,杀进程,Supervisor 自动重启 =========="
+            echo " ========== 提取端口,杀进程,Supervisor 会自动重启 =========="
             PORT=$(grep -E '^APP_PORT\s*=' .env.prod | head -1 | sed 's/.*=\s*//')
             PORT=${PORT:-9099}
             fuser -k ${PORT}/tcp 2>/dev/null || true
