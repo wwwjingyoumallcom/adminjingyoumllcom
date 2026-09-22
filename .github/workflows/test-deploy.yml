@@ -98,7 +98,7 @@ jobs:
           SOURCE: ruoyi-fastapi-app/dist/build/h5/
           TARGET: ${{ vars.H5_TARGET }}
 
-          
+
   backend_build_deploy:
     runs-on: ubuntu-latest
     environment: test
@@ -131,7 +131,7 @@ jobs:
         uses: easingthemes/ssh-deploy@main
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          ARGS: "-rlgoDzv --delete"
+          ARGS: "-rlgoDzv --delete exclude=.venv"
           REMOTE_HOST: ${{ vars.REMOTE_HOST }}
           REMOTE_USER: ${{ vars.REMOTE_USER }}
           SOURCE: ruoyi-fastapi-backend/
