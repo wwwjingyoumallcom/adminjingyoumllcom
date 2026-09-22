@@ -6,9 +6,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  frontend:
+  frontend_build_deploy:
     runs-on: ubuntu-latest
     environment: test
+    defaults:
+      run:
+        working-directory: ruoyi-fastapi-frontend
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,16 +35,23 @@ jobs:
         run: npm run build:prod
         env:
           NODE_OPTIONS: --max-old-space-size=8096
-
-      - name: Upload frontend artifact
-        uses: actions/upload-artifact@v4
+      
+      - name: Deploy web to ${{ vars.WEB_TARGET }}
+        uses: easingthemes/ssh-deploy@main
         with:
-          name: frontend_artifact
-          path: ruoyi-fastapi-frontend/dist
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          ARGS: "-rlgoDzv --delete"
+          REMOTE_HOST: ${{ vars.REMOTE_HOST }}
+          REMOTE_USER: ${{ vars.REMOTE_USER }}
+          SOURCE: ruoyi-fastapi-frontend/dist/
+          TARGET: ${{ vars.WEB_TARGET }}
 
-  app:
+  app_build_deploy:
     runs-on: ubuntu-latest
     environment: test
+    defaults:
+      run:
+        working-directory: ruoyi-fastapi-app
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -78,13 +88,18 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8096
 
-      - name: Upload h5 artifact
-        uses: actions/upload-artifact@v4
+      - name: Deploy h5 to ${{ vars.H5_TARGET }}
+        uses: easingthemes/ssh-deploy@main
         with:
-          name: h5_artifact
-          path: ruoyi-fastapi-app/dist/build/h5
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          ARGS: "-rlgoDzv --delete"
+          REMOTE_HOST: ${{ vars.REMOTE_HOST }}
+          REMOTE_USER: ${{ vars.REMOTE_USER }}
+          SOURCE: ruoyi-fastapi-app/dist/build/h5/
+          TARGET: ${{ vars.H5_TARGET }}
 
-  backend:
+          
+  backend_build_deploy:
     runs-on: ubuntu-latest
     environment: test
     defaults:
@@ -112,71 +127,26 @@ jobs:
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           REDIS_DATABASE: ${{ vars.REDIS_DATABASE }}
 
-      - name: Upload backend artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend_artifact
-          path: ruoyi-fastapi-backend
-          include-hidden-files: true
-
-  deploy:
-    needs: [frontend, app, backend]
-    runs-on: ubuntu-latest
-    environment: test
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: deploy
-
-      - name: List artifact structure
-        run: |
-          find deploy -maxdepth 4 -type d | head -30
-          echo "========== 检查 .env.prod =========="
-          ls -la deploy/backend_artifact/.env.prod 2>/dev/null || echo "❌ .env.prod 不存在!"
-          echo "========== 检查隐藏文件 =========="
-          ls -la deploy/backend_artifact/ | grep '^\.' || true
-
-      - name: Deploy web to ${{ vars.TARGET }}/frontend/web
+      - name: Deploy backend to ${{ vars.BACKEND_TARGET }}
         uses: easingthemes/ssh-deploy@main
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           ARGS: "-rlgoDzv --delete"
-          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
-          REMOTE_USER: ${{ secrets.REMOTE_USER }}
-          SOURCE: deploy/frontend_artifact/
-          TARGET: ${{ vars.TARGET }}/frontend/web
+          REMOTE_HOST: ${{ vars.REMOTE_HOST }}
+          REMOTE_USER: ${{ vars.REMOTE_USER }}
+          SOURCE: ruoyi-fastapi-backend/
+          TARGET: ${{ vars.BACKEND_TARGET }}
 
-      - name: Deploy h5 to ${{ vars.TARGET }}/frontend/h5
-        uses: easingthemes/ssh-deploy@main
-        with:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          ARGS: "-rlgoDzv --delete"
-          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
-          REMOTE_USER: ${{ secrets.REMOTE_USER }}
-          SOURCE: deploy/h5_artifact/
-          TARGET: ${{ vars.TARGET }}/frontend/h5
-
-      - name: Deploy backend to ${{ vars.TARGET }}/backend/fastapi
-        uses: easingthemes/ssh-deploy@main
-        with:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          ARGS: "-rlgoDzv --delete"
-          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
-          REMOTE_USER: ${{ secrets.REMOTE_USER }}
-          SOURCE: deploy/backend_artifact/
-          TARGET: ${{ vars.TARGET }}/backend/fastapi
-
-      - name: Restart backend service
+      - name: Restart backend
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.REMOTE_HOST }}
-          username: ${{ secrets.REMOTE_USER }}
+          host: ${{ vars.REMOTE_HOST }}
+          username: ${{ vars.REMOTE_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             #!/bin/bash
             export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-            cd ${{ vars.TARGET }}/backend/fastapi/
+            cd ${{ vars.BACKEND_TARGET }}
 
             echo "========== 虚拟环境检查与修复 =========="
             if ! .venv/bin/python --version &>/dev/null; then
