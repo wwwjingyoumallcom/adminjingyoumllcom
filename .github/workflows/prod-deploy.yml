@@ -1,16 +1,52 @@
-name: Prod Environment CI/CD
+name: Test Environment CI/CD
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  # 生产环境构建：前端打包 + 产物放入 backend/dist（由后端托管）
-  build:
+  frontend_build_deploy:
     runs-on: ubuntu-latest
     environment: prod
+    defaults:
+      run:
+        working-directory: ruoyi-fastapi-frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.1'
+
+      - name: Install frontend dependencies
+        working-directory: ruoyi-fastapi-frontend
+        run: npm ci --registry=https://registry.npmmirror.com
+        
+      - name: Build frontend
+        working-directory: ruoyi-fastapi-frontend
+        run: npm run build:prod
+        env:
+          NODE_OPTIONS: --max-old-space-size=8096
+      
+      - name: Deploy web to ${{ vars.WEB_TARGET }}
+        uses: easingthemes/ssh-deploy@main
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          ARGS: "-rlgoDzv --delete"
+          REMOTE_HOST: ${{ vars.REMOTE_HOST }}
+          REMOTE_USER: ${{ vars.REMOTE_USER }}
+          SOURCE: ruoyi-fastapi-frontend/dist/
+          TARGET: ${{ vars.WEB_TARGET }}
+
+  app_build_deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    defaults:
+      run:
+        working-directory: ruoyi-fastapi-app
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,91 +60,145 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24.18.1'
-          cache: 'pnpm'
-          cache-dependency-path: frontend/web/pnpm-lock.yaml
 
-      - name: Install frontend dependencies
-        working-directory: frontend/web
-        run: pnpm install --frozen-lockfile
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
 
-      - name: Build frontend (prod)
-        working-directory: frontend/web
-        run: pnpm build:prod
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('ruoyi-fastapi-app/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install app dependencies
+        working-directory: ruoyi-fastapi-app
+        run: pnpm install
+
+      - name: Build app-h5
+        working-directory: ruoyi-fastapi-app
+        run: pnpm run build:h5
         env:
           NODE_OPTIONS: --max-old-space-size=8096
 
-      - name: Copy frontend dist to backend
-        run: |
-          rm -rf backend/dist
-          mkdir -p backend/dist
-          cp -r frontend/web/dist/* backend/dist/
-          echo "backend/dist/index.html exists: $([ -f backend/dist/index.html ] && echo yes || echo no)"
-
-      - name: Upload deployment artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: deploy-artifacts
-          path: backend
-          include-hidden-files: true
-
-  # 生产环境部署：rsync 同步代码 + SSH 重启后端
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: prod
-    steps:
-      - name: Download deployment artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: deploy-artifacts
-          path: deploy
-
-      - name: Deploy to prod server
+      - name: Deploy h5 to ${{ vars.H5_TARGET }}
         uses: easingthemes/ssh-deploy@main
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          # 只能覆盖源目录，不能删除源目录
-          ARGS: "-rlgoDzvc -i"
-          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
-          REMOTE_USER: ${{ secrets.REMOTE_USER }}
-          TARGET: ${{ vars.TARGET }}
-          SOURCE: deploy/
+          ARGS: "-rlgoDzv --delete"
+          REMOTE_HOST: ${{ vars.REMOTE_HOST }}
+          REMOTE_USER: ${{ vars.REMOTE_USER }}
+          SOURCE: ruoyi-fastapi-app/dist/build/h5/
+          TARGET: ${{ vars.H5_TARGET }}
 
-      - name: Restart backend service
-        uses: appleboy/ssh-action@master
+
+  backend_build_deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    defaults:
+      run:
+        working-directory: ruoyi-fastapi-backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Render .env.prod from template
+        run: |
+          envsubst '${DB_TYPE} ${DB_HOST} ${DB_PORT} ${DB_USERNAME} ${DB_PASSWORD} ${DB_DATABASE} ${REDIS_HOST} ${REDIS_PORT} ${REDIS_USERNAME} ${REDIS_PASSWORD} ${REDIS_DATABASE}' \
+            < .env.prod.template > .env.prod
+          echo ".env.prod rendered successfully"
+        env:
+          DB_TYPE: ${{ vars.DB_TYPE }}
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_PORT: ${{ vars.DB_PORT }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_DATABASE: ${{ vars.DB_DATABASE }}
+          REDIS_HOST: ${{ vars.REDIS_HOST }}
+          REDIS_PORT: ${{ vars.REDIS_PORT }}
+          REDIS_USERNAME: ${{ vars.REDIS_USERNAME }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          REDIS_DATABASE: ${{ vars.REDIS_DATABASE }}
+
+      - name: Deploy backend to ${{ vars.BACKEND_TARGET }}
+        uses: easingthemes/ssh-deploy@main
         with:
-          host: ${{ secrets.REMOTE_HOST }}
-          username: ${{ secrets.REMOTE_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          ARGS: "-rlgoDzv --delete --exclude=.venv"
+          REMOTE_HOST: ${{ vars.REMOTE_HOST }}
+          REMOTE_USER: ${{ vars.REMOTE_USER }}
+          SOURCE: ruoyi-fastapi-backend/
+          TARGET: ${{ vars.BACKEND_TARGET }}
+
+      - name: Restart backend
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.REMOTE_HOST }}
+          username: ${{ vars.REMOTE_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            #!/bin/bash
             export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-            cd ${{ vars.TARGET }}/backend
-            uv sync
-            mkdir -p logs
+            cd ${{ vars.BACKEND_TARGET }}
 
-            # 停止旧的后端进程（仅用 PID 文件，避免 pkill 误杀 SSH shell）
-            if [ -f backend.pid ]; then
-              OLD_PID=$(cat backend.pid)
-              kill "$OLD_PID" 2>/dev/null || true
-              sleep 2
-              kill -9 "$OLD_PID" 2>/dev/null || true
-              rm -f backend.pid
+            echo "========== 虚拟环境检查与修复 =========="
+            if ! .venv/bin/python --version &>/dev/null; then
+              echo "⚠️ 虚拟环境损坏，重建中..."
+              uv python install 3.12 2>/dev/null || true
+              rm -rf .venv
+              uv venv --python 3.12
             fi
+            echo "✅ Python: $(.venv/bin/python --version)"
 
-            # 启动新进程（生产模式，--env=prod 自动关闭 reload）
-            nohup uv run main.py run --env=prod > logs/backend.log 2>&1 < /dev/null &
-            echo $! > backend.pid
-            disown
-            sleep 3
+            echo " ========== 安装核心依赖 =========="
+            uv pip install -r requirements.txt
 
-            # 验证进程存活
-            NEW_PID=$(cat backend.pid)
-            if kill -0 "$NEW_PID" 2>/dev/null; then
-              echo "✅ Backend started (PID: $NEW_PID)"
+            echo " ========== 安装 AI 插件依赖 =========="
+            uv pip install \
+              agno==2.8.6 \
+              anthropic==0.120.2 \
+              cerebras-cloud-sdk==1.91.0 \
+              cohere==7.0.8 \
+              google-genai==2.16.0 \
+              groq==1.6.0 \
+              litellm==1.94.0 \
+              llama-api-client==0.6.0 \
+              mistralai==2.8.0 \
+              ollama==0.6.2 \
+              openai==2.52.0 \
+              portkey-ai==2.3.4
+
+            echo " ========== 重启服务 =========="
+            PORT=$(grep -E '^APP_PORT\s*=' .env.prod | head -1 | sed 's/.*=\s*//')
+            PORT=${PORT:-9099}
+
+            # 通过 Supervisor 重启（如果已配置）
+            if command -v supervisorctl &>/dev/null && supervisorctl status ruoyifastapi &>/dev/null; then
+              echo "通过 Supervisor 重启服务..."
+              supervisorctl restart ruoyifastapi
             else
-              echo "❌ Backend failed to start, check logs/backend.log"
-              tail -50 logs/backend.log
-              exit 1
+              echo "Supervisor 未配置，手动重启..."
+              fuser -k ${PORT}/tcp 2>/dev/null || true
+              sleep 1
+              nohup .venv/bin/python app.py --env prod > /tmp/ruoyi-app.log 2>&1 &
+              echo "服务已启动，PID: $!"
             fi
 
-            echo "Deployment completed successfully"
+            echo " ========== 健康检查 =========="
+            echo "Waiting for health check on port ${PORT}..."
+            for i in $(seq 1 30); do
+              # 检查端口是否响应（任何 HTTP 状态码都说明服务已启动）
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/" 2>/dev/null || echo "000")
+              if [ "$HTTP_CODE" != "000" ]; then
+                echo "✅ Deployment successful (HTTP ${HTTP_CODE}) after ${i}s"
+                exit 0
+              fi
+              sleep 1
+            done
+
+            echo "❌ Health check failed after 30s"
+            echo "========== 最近日志 =========="
+            tail -20 /tmp/ruoyi-app.log 2>/dev/null || true
+            exit 1
