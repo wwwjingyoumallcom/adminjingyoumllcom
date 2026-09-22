@@ -16,11 +16,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.3
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -29,6 +24,7 @@ jobs:
       - name: Install frontend dependencies
         working-directory: ruoyi-fastapi-frontend
         run: npm ci --registry=https://registry.npmmirror.com
+        
       - name: Build frontend
         working-directory: ruoyi-fastapi-frontend
         run: npm run build:prod
