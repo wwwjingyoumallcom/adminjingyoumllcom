@@ -28,8 +28,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ruoyi-fastapi-frontend
-        run: npm install --registry=https://registry.npmmirror.com
-
+        run: npm ci --registry=https://registry.npmmirror.com
       - name: Build frontend
         working-directory: ruoyi-fastapi-frontend
         run: npm run build:prod
