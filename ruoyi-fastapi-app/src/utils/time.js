@@ -1,5 +1,7 @@
 // 补齐小程序运行时可能缺失的 Intl 能力和 IANA 时区数据。
 // 同步加载，保证业务时区初始化和首屏渲染时已具备完整能力。
+// H5 运行在现代浏览器中，已原生支持完整 Intl，无需 polyfill。
+// #ifndef H5
 import '@formatjs/intl-getcanonicallocales/polyfill.js'
 import '@formatjs/intl-locale/polyfill.js'
 import '@formatjs/intl-pluralrules/polyfill.js'
@@ -9,6 +11,7 @@ import '@formatjs/intl-numberformat/locale-data/en.js'
 import '@formatjs/intl-datetimeformat/polyfill.js'
 import '@formatjs/intl-datetimeformat/locale-data/en.js'
 import '@formatjs/intl-datetimeformat/add-all-tz.js'
+// #endif
 
 import { ref } from 'vue'
 import dayjs from 'dayjs'
