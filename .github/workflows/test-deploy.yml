@@ -1,4 +1,4 @@
-name: Test Environment CI/CD
+name: test environment CI/CD
 
 on:
   push:
